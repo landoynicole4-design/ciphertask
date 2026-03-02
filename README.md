@@ -4,8 +4,7 @@
 
 ---
 
-Apk File: ## APK
-Download the `app-debug.apk` file from this repository to install the app.
+Apk File: [Download APK](https://github.com/landoynicole4-design/ciphertask/releases/download/v1.0/app-debug.apk)
 
 ## 👥 Team Members & Roles
 

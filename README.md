@@ -4,6 +4,9 @@
 
 ---
 
+Apk File: ## APK
+Download the `app-debug.apk` file from this repository to install the app.
+
 ## 👥 Team Members & Roles
 
 | Member | Role                         | Responsibilities                                                          |

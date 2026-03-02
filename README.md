@@ -6,15 +6,17 @@
 
 Apk File: [Download APK](https://github.com/landoynicole4-design/ciphertask/releases/download/v1.0/app-debug.apk)
 
+
+
 ## 👥 Team Members & Roles
 
-| Member | Role                         | Responsibilities                                                          |
-| ------ | ---------------------------- | ------------------------------------------------------------------------- |
-| M1     | Lead Architect & DB Engineer | Project setup, MVVM structure, Encrypted Hive DB, CRUD operations         |
-| M2     | Security & Cryptography Lead | AES-256 EncryptionService, Key generation & FlutterSecureStorage          |
-| M3     | Auth & Biometrics Specialist | local_auth biometrics, SessionService (2-min auto-logout), AuthViewModel  |
-| M4     | Backend & Network (SSL)      | Firebase Auth registration/login, HTTPS enforcement, OTP bonus screen     |
-| M5     | UI/UX & Integration          | LoginView, RegisterView, TodoListView, privacy blur, Provider integration |
+| Member                 | Role                         | Responsibilities                                                          |
+| ---------------------- | ---------------------------- | ------------------------------------------------------------------------- |
+| Christian Ville Ranque | Lead Architect & DB Engineer | Project setup, MVVM structure, Encrypted Hive DB, CRUD operations         |
+| Antonio Uy             | Security & Cryptography Lead | AES-256 EncryptionService, Key generation & FlutterSecureStorage          |
+| Joemarie Estologa      | Auth & Biometrics Specialist | local_auth biometrics, SessionService (2-min auto-logout), AuthViewModel  |
+| Stephen Pusta          | Backend & Network (SSL)      | Firebase Auth registration/login, HTTPS enforcement, OTP bonus screen     |
+| Nicole James Landoy    | UI/UX & Integration          | LoginView, RegisterView, TodoListView, privacy blur, Provider integration |
 
 ---
 

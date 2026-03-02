@@ -18,7 +18,6 @@ class _LoginViewState extends State<LoginView> with TickerProviderStateMixin {
   final _passwordController = TextEditingController();
   final _formKey = GlobalKey<FormState>();
   bool _obscurePassword = true;
-  bool _canUseBiometrics = false;
 
   late AnimationController _bgAnimController;
   late AnimationController _fadeController;
@@ -53,13 +52,6 @@ class _LoginViewState extends State<LoginView> with TickerProviderStateMixin {
 
     _fadeController.forward();
     _slideController.forward();
-    _checkBiometricAvailability();
-  }
-
-  Future<void> _checkBiometricAvailability() async {
-    final authVM = context.read<AuthViewModel>();
-    final canUse = await authVM.canUseBiometrics();
-    if (mounted) setState(() => _canUseBiometrics = canUse);
   }
 
   @override
@@ -261,27 +253,25 @@ class _LoginViewState extends State<LoginView> with TickerProviderStateMixin {
             label: 'Sign In',
             icon: Icons.arrow_forward_rounded,
           ),
-          if (_canUseBiometrics) ...[
-            const SizedBox(height: 20),
-            Row(
-              children: [
-                Expanded(
-                    child: Divider(color: Colors.white.withValues(alpha: 0.1))),
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 12),
-                  child: Text('OR',
-                      style: TextStyle(
-                          color: Colors.white.withValues(alpha: 0.3),
-                          fontSize: 12,
-                          fontWeight: FontWeight.w600)),
-                ),
-                Expanded(
-                    child: Divider(color: Colors.white.withValues(alpha: 0.1))),
-              ],
-            ),
-            const SizedBox(height: 20),
-            _buildBiometricButton(authVM),
-          ],
+          const SizedBox(height: 20),
+          Row(
+            children: [
+              Expanded(
+                  child: Divider(color: Colors.white.withValues(alpha: 0.1))),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 12),
+                child: Text('OR',
+                    style: TextStyle(
+                        color: Colors.white.withValues(alpha: 0.3),
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600)),
+              ),
+              Expanded(
+                  child: Divider(color: Colors.white.withValues(alpha: 0.1))),
+            ],
+          ),
+          const SizedBox(height: 20),
+          _buildBiometricButton(authVM),
         ],
       ),
     );

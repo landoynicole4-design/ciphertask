@@ -16,6 +16,21 @@ class UserModel {
     this.isEmailVerified = true,
   });
 
+  /// Creates a copy with updated fields
+  UserModel copyWith({
+    String? uid,
+    String? email,
+    String? passwordHash,
+    bool? isEmailVerified,
+  }) {
+    return UserModel(
+      uid: uid ?? this.uid,
+      email: email ?? this.email,
+      passwordHash: passwordHash ?? this.passwordHash,
+      isEmailVerified: isEmailVerified ?? this.isEmailVerified,
+    );
+  }
+
   /// Convert UserModel to JSON map for local storage
   Map<String, dynamic> toJson() {
     return {

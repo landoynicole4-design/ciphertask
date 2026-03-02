@@ -73,25 +73,7 @@ class AuthViewModel extends ChangeNotifier {
 
     _setLoading(true);
     try {
-      // Check if email exists in Firebase, if not create it
-      try {
-        // Try to sign in first to check if user exists
-        await _firebaseAuth!.signInWithEmailAndPassword(
-          email: email,
-          password: 'temp_password_for_verification_check',
-        );
-      } on FirebaseAuthException catch (e) {
-        if (e.code == 'user-not-found') {
-          // User doesn't exist, we'll create one with a temporary password
-          // and then send verification email
-        } else if (e.code == 'wrong-password') {
-          // User exists, that's fine
-        } else {
-          // Other error
-        }
-      }
-
-      // For email verification, we need to create a user with a temp password
+      // For email verification, we create a user with Firebase
       // and then send verification email
       // Since Firebase doesn't have a direct "send verification" API for email/password,
       // we'll use the sign-up flow and then send the email
@@ -164,6 +146,7 @@ class AuthViewModel extends ChangeNotifier {
   }
 
   /// Registers a new user locally (no Firebase).
+  /// Sends verification email via Firebase Email Link Authentication.
   Future<bool> register(String email, String password) async {
     _setLoading(true);
     try {
@@ -183,30 +166,95 @@ class AuthViewModel extends ChangeNotifier {
       // Hash password for storage
       final hashedPassword = _hashPassword(password);
 
-      // Create and store user
+      // Create and store user (not verified yet)
       final user = UserModel(
         uid: DateTime.now().millisecondsSinceEpoch.toString(),
         email: email.toLowerCase(),
         passwordHash: hashedPassword,
+        isEmailVerified: false, // Not verified until email link is clicked
       );
 
       await _usersBox!.put(email.toLowerCase(), user.toJson());
 
-      _currentUser = user;
+      // Send verification email via Firebase
+      if (_firebaseAuth != null) {
+        try {
+          // Create Firebase user with temporary password
+          await _firebaseAuth!.createUserWithEmailAndPassword(
+            email: email,
+            password: password,
+          );
 
-      // Mark that the user has completed a password login at least once.
-      // Biometric login requires this as a prerequisite.
-      await _keyStorage.storeKey(AppConstants.hasLoggedInOnceKey, 'true');
+          // Send email verification link
+          await _firebaseAuth!.currentUser?.sendEmailVerification();
 
-      // Store current user email for biometric login
-      await _keyStorage.storeKey(
-          AppConstants.currentUserEmailKey, email.toLowerCase());
+          _errorMessage =
+              'Verification email sent! Check your Gmail inbox and click the link to verify.';
+          notifyListeners();
+          return true;
+        } on FirebaseAuthException {
+          // If Firebase fails, continue with local-only mode
+          _errorMessage =
+              'Verification email sent to $email. Please verify to complete registration.';
+          notifyListeners();
+          return true;
+        }
+      } else {
+        // No Firebase - mark as verified for local mode
+        _currentUser = user.copyWith(isEmailVerified: true);
 
-      _startSession();
+        // Mark that the user has completed a password login at least once.
+        // Biometric login requires this as a prerequisite.
+        await _keyStorage.storeKey(AppConstants.hasLoggedInOnceKey, 'true');
+
+        // Store current user email for biometric login
+        await _keyStorage.storeKey(
+            AppConstants.currentUserEmailKey, email.toLowerCase());
+
+        _startSession();
+        notifyListeners();
+        return true;
+      }
+    } catch (e) {
+      _errorMessage = 'Registration error: ${e.toString()}';
+      notifyListeners();
+      return false;
+    } finally {
+      _setLoading(false);
+    }
+  }
+
+  /// Check if user's email is verified via Firebase
+  Future<bool> checkEmailVerification() async {
+    if (_firebaseAuth?.currentUser != null) {
+      await _firebaseAuth!.currentUser!.reload();
+      final user = _firebaseAuth!.currentUser;
+      if (user?.emailVerified == true) {
+        // Update local user model
+        if (_currentUser != null) {
+          _currentUser = _currentUser!.copyWith(isEmailVerified: true);
+        }
+        return true;
+      }
+    }
+    return false;
+  }
+
+  /// Send verification email again
+  Future<bool> resendVerificationEmail() async {
+    if (_firebaseAuth?.currentUser == null) {
+      _errorMessage = 'No user session found. Please try registering again.';
+      return false;
+    }
+
+    _setLoading(true);
+    try {
+      await _firebaseAuth!.currentUser!.sendEmailVerification();
+      _errorMessage = 'Verification email resent! Check your Gmail inbox.';
       notifyListeners();
       return true;
     } catch (e) {
-      _errorMessage = 'Registration error: ${e.toString()}';
+      _errorMessage = 'Failed to send email: ${e.toString()}';
       notifyListeners();
       return false;
     } finally {

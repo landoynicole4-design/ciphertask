@@ -34,7 +34,6 @@ class AppConstants {
   static const String loginRoute = '/login';
   static const String registerRoute = '/register';
   static const String todoListRoute = '/todos';
-  static const String otpRoute = '/otp';
 
   // ─── Regex Validation Patterns (Security) ───────────────────
   /// Email validation regex (RFC 5322 simplified)

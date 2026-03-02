@@ -15,12 +15,19 @@ import 'viewmodels/todo_viewmodel.dart';
 import 'views/login_view.dart';
 import 'views/register_view.dart';
 import 'views/todo_list_view.dart';
-import 'views/otp_view.dart';
 import 'utils/constants.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  await Firebase.initializeApp();
+
+  // Initialize Firebase with error handling (for local-only mode)
+  try {
+    await Firebase.initializeApp();
+  } catch (e) {
+    // Firebase not configured - continue in local-only mode
+    debugPrint('Firebase not configured: $e');
+  }
+
   await Hive.initFlutter();
   Hive.registerAdapter(TodoModelAdapter());
   final keyStorageService = KeyStorageService();
@@ -95,7 +102,6 @@ class CipherTaskApp extends StatelessWidget {
                 AppConstants.loginRoute: (_) => const LoginView(),
                 AppConstants.registerRoute: (_) => const RegisterView(),
                 AppConstants.todoListRoute: (_) => const TodoListView(),
-                AppConstants.otpRoute: (_) => const OtpView(),
               },
             ),
           );

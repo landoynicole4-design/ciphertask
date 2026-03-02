@@ -1,0 +1,50 @@
+name: ciphertask
+description: Secure Encrypted To-Do System for High-Profile Executives.
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: '>=3.0.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  # State Management
+  provider: ^6.1.2
+
+  # Secure Local Storage (Hardware-Backed: Keystore/Keychain)
+  flutter_secure_storage: ^9.2.2
+
+  # AES-256 Encryption
+  encrypt: ^5.0.3
+  pointycastle: ^3.9.1
+
+  # Encrypted Local Database
+  hive: ^2.2.3
+  hive_flutter: ^1.1.0
+
+  # Biometric Authentication
+  local_auth: ^2.2.0
+
+  # Firebase (Email Verification & Auth)
+  firebase_core: ^3.6.0
+  firebase_auth: ^5.3.1
+
+  # Privacy / Screen Security
+  flutter_windowmanager: ^0.2.0
+
+  # Utilities
+  uuid: ^4.4.0
+  intl: ^0.19.0
+  crypto: ^3.0.3
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  hive_generator: ^2.0.1
+  build_runner: ^2.4.9
+  flutter_lints: ^3.0.0
+
+flutter:
+  uses-material-design: true

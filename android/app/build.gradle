@@ -1,0 +1,72 @@
+plugins {
+    id "com.android.application"
+    id "kotlin-android"
+    // The Flutter Gradle Plugin must be applied after the Android and Kotlin Gradle plugins.
+    id "dev.flutter.flutter-gradle-plugin"
+}
+
+android {
+    namespace = "com.example.ciphertask"
+    compileSdk = flutter.compileSdkVersion
+    ndkVersion = flutter.ndkVersion
+
+    compileOptions {
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
+    }
+
+    kotlinOptions {
+        jvmTarget = "17"
+    }
+
+    // Explicitly tell Gradle to look in kotlin/ for sources
+    sourceSets {
+        main {
+            java.srcDirs += 'src/main/kotlin'
+        }
+    }
+
+    defaultConfig {
+        applicationId = "com.example.ciphertask"
+        minSdk = 23
+        targetSdk = flutter.targetSdkVersion
+        versionCode = flutter.versionCode
+        versionName = flutter.versionName
+        
+        // Enable multiDex for large apps
+        multiDexEnabled true
+        
+        // Support all ABIs for better emulator compatibility
+        ndk {
+            abiFilters 'armeabi-v7a', 'arm64-v8a', 'x86', 'x86_64'
+        }
+    }
+
+    buildTypes {
+        release {
+            signingConfig = signingConfigs.debug
+            
+            // Enable minification for release builds
+            minifyEnabled true
+            shrinkResources true
+            
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+        }
+        debug {
+            // Enable debuggable for emulator testing
+            debuggable true
+        }
+    }
+    
+    // ABI splits for different architectures
+    splits {
+        abi {
+            enable false // Disable for now to build universal APK for emulators
+            universalApk true
+        }
+    }
+}
+
+flutter {
+    source = "../.."
+}

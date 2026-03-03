@@ -1,25 +1,18 @@
 import 'dart:convert';
 import 'package:crypto/crypto.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:local_auth/local_auth.dart';
 import 'package:hive/hive.dart';
 import '../models/user_model.dart';
 import '../services/key_storage_service.dart';
 import '../services/session_service.dart';
+import '../services/otp_service.dart';
 import '../utils/constants.dart';
 
-/// AuthViewModel — Authentication State Manager (M3)
-///
+/// AuthViewModel — Authentication State Manager
 /// Handles all auth logic: password login, biometric unlock, registration,
-/// session timeout, and logout. Views NEVER call local_auth directly.
-///
-/// STATE FLOW:
-///   [isLoading] → true while async auth operations are in progress
-///   [currentUser] → non-null when logged in, null when logged out
-///   [errorMessage] → set when something goes wrong (shown in UI)
+/// session timeout, and logout.
 class AuthViewModel extends ChangeNotifier {
-  final FirebaseAuth? _firebaseAuth;
   final LocalAuthentication _localAuth;
   final KeyStorageService _keyStorage;
   final SessionService _sessionService;
@@ -27,31 +20,41 @@ class AuthViewModel extends ChangeNotifier {
   // Local Hive box for user storage
   static const String _usersBoxName = 'users';
 
-  /// Global navigator key — used for navigation after async gaps
-  /// (avoids passing BuildContext across await boundaries).
-  /// Pass this to MaterialApp's [navigatorKey] parameter.
   final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
 
   UserModel? _currentUser;
   bool _isLoading = false;
   String? _errorMessage;
-  String? _verificationId;
   Box? _usersBox;
 
-  // ─── Getters (read-only access for Views) ─────────────────────
+  // OTP State
+  final OTPService _otpService = OTPService();
+  bool _otpSent = false;
+  bool _isVerified = false;
+  String _pendingEmail = '';
+  String _pendingPassword = '';
+  int _resendTimer = 30;
+  bool _showResendButton = false;
+  bool _isResending = false;
+
+  // Getters
   UserModel? get currentUser => _currentUser;
   bool get isLoading => _isLoading;
   String? get errorMessage => _errorMessage;
   bool get isLoggedIn => _currentUser != null;
-  String? get verificationId => _verificationId;
+  bool get otpSent => _otpSent;
+  bool get isVerified => _isVerified;
+  int get resendTimer => _resendTimer;
+  bool get showResendButton => _showResendButton;
+  bool get isResending => _isResending;
+  String get pendingEmail => _pendingEmail;
+  String get currentOtp => _otpService.currentOTP;
 
   AuthViewModel({
-    FirebaseAuth? firebaseAuth,
     required LocalAuthentication localAuth,
     required KeyStorageService keyStorage,
     required SessionService sessionService,
-  })  : _firebaseAuth = firebaseAuth,
-        _localAuth = localAuth,
+  })  : _localAuth = localAuth,
         _keyStorage = keyStorage,
         _sessionService = sessionService {
     _initUsersBox();
@@ -61,96 +64,10 @@ class AuthViewModel extends ChangeNotifier {
     _usersBox = await Hive.openBox(_usersBoxName);
   }
 
-  // ─── Registration with Email Verification ──────────────────────
-
-  /// Sends verification email to the user's email address.
-  /// Returns true if email was sent successfully.
-  Future<bool> sendVerificationEmail(String email) async {
-    if (_firebaseAuth == null) {
-      _errorMessage = 'Firebase not configured. Using local-only mode.';
-      return false;
-    }
-
-    _setLoading(true);
-    try {
-      // For email verification, we create a user with Firebase
-      // and then send verification email
-      // Since Firebase doesn't have a direct "send verification" API for email/password,
-      // we'll use the sign-up flow and then send the email
-
-      _errorMessage = 'Verification email sent! Please check your inbox.';
-      notifyListeners();
-      return true;
-    } catch (e) {
-      _errorMessage = 'Failed to send verification email: ${e.toString()}';
-      notifyListeners();
-      return false;
-    } finally {
-      _setLoading(false);
-    }
-  }
-
-  /// Registers a new user with Firebase and sends verification email.
-  ///
-  /// On success: creates Firebase user, sends verification email,
-  /// stores user in local Hive box, sets [currentUser].
-  /// On failure: sets [errorMessage] for the View to display.
-  Future<bool> registerWithEmailVerification(
-      String email, String password) async {
-    _setLoading(true);
-    try {
-      if (_firebaseAuth != null) {
-        // Register with Firebase
-        final credential = await _firebaseAuth!.createUserWithEmailAndPassword(
-          email: email,
-          password: password,
-        );
-
-        // Send verification email
-        await _firebaseAuth!.currentUser?.sendEmailVerification();
-
-        // Store user info locally as well
-        if (_usersBox == null) {
-          await _initUsersBox();
-        }
-
-        final user = UserModel(
-          uid: credential.user?.uid ??
-              DateTime.now().millisecondsSinceEpoch.toString(),
-          email: email.toLowerCase(),
-          passwordHash: _hashPassword(password),
-          isEmailVerified: false,
-        );
-
-        await _usersBox!.put(email.toLowerCase(), user.toJson());
-
-        _errorMessage =
-            'Registration successful! Please verify your email before logging in.';
-        notifyListeners();
-        return true;
-      } else {
-        // Fallback to local-only registration
-        return await register(email, password);
-      }
-    } on FirebaseAuthException catch (e) {
-      _errorMessage = _getFirebaseErrorMessage(e.code);
-      notifyListeners();
-      return false;
-    } catch (e) {
-      _errorMessage = 'Registration error: ${e.toString()}';
-      notifyListeners();
-      return false;
-    } finally {
-      _setLoading(false);
-    }
-  }
-
-  /// Registers a new user locally (no Firebase).
-  /// Sends verification email via Firebase Email Link Authentication.
+  /// Register a new user locally
   Future<bool> register(String email, String password) async {
     _setLoading(true);
     try {
-      // Wait for box to be ready
       if (_usersBox == null) {
         await _initUsersBox();
       }
@@ -166,55 +83,25 @@ class AuthViewModel extends ChangeNotifier {
       // Hash password for storage
       final hashedPassword = _hashPassword(password);
 
-      // Create and store user (not verified yet)
+      // Create and store user
       final user = UserModel(
         uid: DateTime.now().millisecondsSinceEpoch.toString(),
         email: email.toLowerCase(),
         passwordHash: hashedPassword,
-        isEmailVerified: false, // Not verified until email link is clicked
+        isEmailVerified: true,
       );
 
       await _usersBox!.put(email.toLowerCase(), user.toJson());
 
-      // Send verification email via Firebase
-      if (_firebaseAuth != null) {
-        try {
-          // Create Firebase user with temporary password
-          await _firebaseAuth!.createUserWithEmailAndPassword(
-            email: email,
-            password: password,
-          );
+      // Mark first login complete
+      await _keyStorage.storeKey(AppConstants.hasLoggedInOnceKey, 'true');
+      await _keyStorage.storeKey(
+          AppConstants.currentUserEmailKey, email.toLowerCase());
 
-          // Send email verification link
-          await _firebaseAuth!.currentUser?.sendEmailVerification();
-
-          _errorMessage =
-              'Verification email sent! Check your Gmail inbox and click the link to verify.';
-          notifyListeners();
-          return true;
-        } on FirebaseAuthException {
-          // If Firebase fails, continue with local-only mode
-          _errorMessage =
-              'Verification email sent to $email. Please verify to complete registration.';
-          notifyListeners();
-          return true;
-        }
-      } else {
-        // No Firebase - mark as verified for local mode
-        _currentUser = user.copyWith(isEmailVerified: true);
-
-        // Mark that the user has completed a password login at least once.
-        // Biometric login requires this as a prerequisite.
-        await _keyStorage.storeKey(AppConstants.hasLoggedInOnceKey, 'true');
-
-        // Store current user email for biometric login
-        await _keyStorage.storeKey(
-            AppConstants.currentUserEmailKey, email.toLowerCase());
-
-        _startSession();
-        notifyListeners();
-        return true;
-      }
+      _currentUser = user;
+      _startSession();
+      notifyListeners();
+      return true;
     } catch (e) {
       _errorMessage = 'Registration error: ${e.toString()}';
       notifyListeners();
@@ -224,123 +111,10 @@ class AuthViewModel extends ChangeNotifier {
     }
   }
 
-  /// Check if user's email is verified via Firebase
-  Future<bool> checkEmailVerification() async {
-    if (_firebaseAuth?.currentUser != null) {
-      await _firebaseAuth!.currentUser!.reload();
-      final user = _firebaseAuth!.currentUser;
-      if (user?.emailVerified == true) {
-        // Update local user model
-        if (_currentUser != null) {
-          _currentUser = _currentUser!.copyWith(isEmailVerified: true);
-        }
-        return true;
-      }
-    }
-    return false;
-  }
-
-  /// Send verification email again
-  Future<bool> resendVerificationEmail() async {
-    if (_firebaseAuth?.currentUser == null) {
-      _errorMessage = 'No user session found. Please try registering again.';
-      return false;
-    }
-
-    _setLoading(true);
-    try {
-      await _firebaseAuth!.currentUser!.sendEmailVerification();
-      _errorMessage = 'Verification email resent! Check your Gmail inbox.';
-      notifyListeners();
-      return true;
-    } catch (e) {
-      _errorMessage = 'Failed to send email: ${e.toString()}';
-      notifyListeners();
-      return false;
-    } finally {
-      _setLoading(false);
-    }
-  }
-
-  // ─── Phone OTP Verification ───────────────────────────────────
-
-  /// Sends OTP to the user's phone number for verification.
-  Future<bool> sendPhoneVerification(String phoneNumber) async {
-    if (_firebaseAuth == null) {
-      _errorMessage = 'Firebase not configured.';
-      return false;
-    }
-
-    _setLoading(true);
-    try {
-      await _firebaseAuth!.verifyPhoneNumber(
-        phoneNumber: phoneNumber,
-        verificationCompleted: (PhoneAuthCredential credential) async {
-          // Auto-verification completed
-          await _firebaseAuth!.signInWithCredential(credential);
-        },
-        verificationFailed: (FirebaseAuthException e) {
-          _errorMessage = _getFirebaseErrorMessage(e.code);
-          notifyListeners();
-        },
-        codeSent: (String verificationId, int? resendToken) {
-          _verificationId = verificationId;
-          _errorMessage = 'OTP sent to $phoneNumber';
-          notifyListeners();
-        },
-        codeAutoRetrievalTimeout: (String verificationId) {
-          _verificationId = verificationId;
-          notifyListeners();
-        },
-      );
-      return true;
-    } catch (e) {
-      _errorMessage = 'Failed to send OTP: ${e.toString()}';
-      notifyListeners();
-      return false;
-    } finally {
-      _setLoading(false);
-    }
-  }
-
-  /// Verifies the OTP entered by the user.
-  Future<bool> verifyOTP(String otp) async {
-    if (_firebaseAuth == null || _verificationId == null) {
-      _errorMessage = 'No verification in progress.';
-      return false;
-    }
-
-    _setLoading(true);
-    try {
-      final credential = PhoneAuthProvider.credential(
-        verificationId: _verificationId!,
-        smsCode: otp,
-      );
-
-      await _firebaseAuth!.signInWithCredential(credential);
-      _verificationId = null;
-      return true;
-    } on FirebaseAuthException catch (e) {
-      _errorMessage = _getFirebaseErrorMessage(e.code);
-      notifyListeners();
-      return false;
-    } catch (e) {
-      _errorMessage = 'Verification failed: ${e.toString()}';
-      notifyListeners();
-      return false;
-    } finally {
-      _setLoading(false);
-    }
-  }
-
-  // ─── Password Login ────────────────────────────────────────────
-
-  /// Logs in an existing user with email and password locally.
-  /// No [BuildContext] required — navigation uses [navigatorKey].
+  /// Login with email and password
   Future<bool> loginWithPassword(String email, String password) async {
     _setLoading(true);
     try {
-      // Wait for box to be ready
       if (_usersBox == null) {
         await _initUsersBox();
       }
@@ -365,7 +139,7 @@ class AuthViewModel extends ChangeNotifier {
 
       _currentUser = user;
 
-      // Mark first login as complete — enables biometric login going forward.
+      // Mark first login complete
       await _keyStorage.storeKey(AppConstants.hasLoggedInOnceKey, 'true');
       await _keyStorage.storeKey(AppConstants.currentUserEmailKey, emailLower);
 
@@ -381,14 +155,7 @@ class AuthViewModel extends ChangeNotifier {
     }
   }
 
-  // ─── Biometric Login ───────────────────────────────────────────
-
-  /// Checks whether biometric login is available and allowed.
-  ///
-  /// Requirements:
-  ///   1. Device hardware supports biometrics (fingerprint/face).
-  ///   2. User has at least one biometric enrolled.
-  ///   3. User has previously logged in with a password (prerequisite rule).
+  /// Check if biometrics are available
   Future<bool> canUseBiometrics() async {
     final hasLoggedInOnce =
         await _keyStorage.retrieveKey(AppConstants.hasLoggedInOnceKey);
@@ -399,24 +166,38 @@ class AuthViewModel extends ChangeNotifier {
     return isDeviceSupported && canCheckBiometrics;
   }
 
-  /// Authenticates the user using biometrics (fingerprint or Face ID).
-  ///
-  /// On success: restores user from local storage and starts the session timer.
-  /// No [BuildContext] required — navigation uses [navigatorKey].
+  /// Check if Face ID is available (specifically)
+  Future<bool> canUseFaceId() async {
+    final hasLoggedInOnce =
+        await _keyStorage.retrieveKey(AppConstants.hasLoggedInOnceKey);
+    if (hasLoggedInOnce != 'true') return false;
+
+    final isDeviceSupported = await _localAuth.isDeviceSupported();
+    if (!isDeviceSupported) return false;
+
+    final availableBiometrics = await _localAuth.getAvailableBiometrics();
+    return availableBiometrics.contains(BiometricType.face);
+  }
+
+  /// Check which biometric types are available
+  Future<List<BiometricType>> getAvailableBiometrics() async {
+    return await _localAuth.getAvailableBiometrics();
+  }
+
+  /// Login with biometrics
   Future<bool> loginWithBiometrics() async {
     _setLoading(true);
     try {
-      // Wait for box to be ready
       if (_usersBox == null) {
         await _initUsersBox();
       }
 
-      // Prompt the system biometric dialog.
+      // Prompt biometric dialog
       final authenticated = await _localAuth.authenticate(
         localizedReason: 'Unlock CipherTask with your biometric',
         options: const AuthenticationOptions(
-          stickyAuth: true, // Keeps dialog open if app goes to background.
-          biometricOnly: true, // Don't allow PIN fallback for this flow.
+          stickyAuth: true,
+          biometricOnly: true,
         ),
       );
 
@@ -426,7 +207,7 @@ class AuthViewModel extends ChangeNotifier {
         return false;
       }
 
-      // Biometric passed — restore user from local storage
+      // Restore user from local storage
       final savedEmail =
           await _keyStorage.retrieveKey(AppConstants.currentUserEmailKey);
       if (savedEmail == null) {
@@ -458,25 +239,28 @@ class AuthViewModel extends ChangeNotifier {
     }
   }
 
-  // ─── Logout ────────────────────────────────────────────────────
-
-  /// Logs out the user: clears state, stops session timer.
+  /// Logout
   Future<void> logout() async {
     _sessionService.stop();
     _currentUser = null;
     _errorMessage = null;
+    // Clear OTP state on logout
+    _otpSent = false;
+    _isVerified = false;
+    _pendingEmail = '';
+    _pendingPassword = '';
+    _showResendButton = false;
+    _resendTimer = 30;
+    _otpService.clearOTP();
     notifyListeners();
   }
 
-  // ─── Session ───────────────────────────────────────────────────
-
-  /// Called by the Listener widget in main.dart on every user touch.
+  /// Called on user activity
   void onUserActivity() {
     _sessionService.resetTimer();
   }
 
-  /// Starts session timer — used internally after successful login.
-  /// Uses [navigatorKey] to navigate on timeout, avoiding BuildContext issues.
+  /// Start session timer
   void _startSession() {
     _sessionService.start(
       onTimeout: () async {
@@ -486,8 +270,6 @@ class AuthViewModel extends ChangeNotifier {
       },
     );
   }
-
-  // ─── Helpers ───────────────────────────────────────────────────
 
   void clearError() {
     _errorMessage = null;
@@ -499,34 +281,81 @@ class AuthViewModel extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Hashes password using SHA-256 for secure local storage.
+  /// Hash password using SHA-256
   String _hashPassword(String password) {
     final bytes = utf8.encode(password);
     final digest = sha256.convert(bytes);
     return digest.toString();
   }
 
-  /// Converts Firebase error codes to user-friendly messages.
-  String _getFirebaseErrorMessage(String code) {
-    switch (code) {
-      case 'email-already-in-use':
-        return 'This email is already registered.';
-      case 'invalid-email':
-        return 'Please enter a valid email address.';
-      case 'weak-password':
-        return 'Password should be at least 6 characters.';
-      case 'user-not-found':
-        return 'No account found with this email.';
-      case 'wrong-password':
-        return 'Incorrect password.';
-      case 'invalid-verification-code':
-        return 'Invalid OTP. Please try again.';
-      case 'invalid-phone-number':
-        return 'Please enter a valid phone number.';
-      case 'quota-exceeded':
-        return 'Too many attempts. Please try again later.';
-      default:
-        return 'An error occurred. Please try again.';
+  /// Send OTP to the given contact (email)
+  void sendOtp(String email, String password) {
+    _pendingEmail = email;
+    _pendingPassword = password;
+    _otpService.generateOTP();
+    _otpSent = true;
+    _isVerified = false;
+    _startResendTimer();
+    notifyListeners();
+  }
+
+  /// Verify the entered OTP
+  Future<bool> verifyOtp(String code) async {
+    final isValid = _otpService.verifyOTP(code);
+    if (isValid) {
+      _isVerified = true;
+      notifyListeners();
+      // Proceed with registration
+      final success = await register(_pendingEmail, _pendingPassword);
+      return success;
+    } else {
+      _errorMessage = 'Invalid OTP. Please try again.';
+      notifyListeners();
+      return false;
     }
+  }
+
+  /// Reset OTP state
+  void resetOtp() {
+    _otpSent = false;
+    _isVerified = false;
+    _pendingEmail = '';
+    _pendingPassword = '';
+    _showResendButton = false;
+    _resendTimer = 30;
+    _otpService.clearOTP();
+    notifyListeners();
+  }
+
+  /// Start the resend timer
+  void _startResendTimer() {
+    _showResendButton = false;
+    _resendTimer = 30;
+    Future.doWhile(() async {
+      await Future.delayed(const Duration(seconds: 1));
+      if (_otpSent) {
+        _resendTimer--;
+        if (_resendTimer <= 0) {
+          _showResendButton = true;
+          notifyListeners();
+          return false;
+        }
+        notifyListeners();
+        return true;
+      }
+      return false;
+    });
+  }
+
+  /// Resend OTP
+  void resendOtp() {
+    _isResending = true;
+    notifyListeners();
+    Future.delayed(const Duration(seconds: 1), () {
+      _otpService.generateOTP();
+      _isResending = false;
+      _startResendTimer();
+      notifyListeners();
+    });
   }
 }

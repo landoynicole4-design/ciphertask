@@ -27,13 +27,6 @@ dependencies:
   # Biometric Authentication
   local_auth: ^2.2.0
 
-  # Firebase (Email Verification & Auth)
-  firebase_core: ^3.6.0
-  firebase_auth: ^5.3.1
-
-  # Privacy / Screen Security
-  flutter_windowmanager: ^0.2.0
-
   # Utilities
   uuid: ^4.4.0
   intl: ^0.19.0

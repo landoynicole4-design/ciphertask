@@ -4,10 +4,12 @@ import 'dart:math' as math;
 import '../models/todo_model.dart';
 import '../viewmodels/auth_viewmodel.dart';
 import '../viewmodels/todo_viewmodel.dart';
+import '../services/session_service.dart';
 import '../utils/constants.dart';
 
 /// TodoListView — Premium Redesign (M5)
-/// Features: Animated background, glassmorphism cards, gradient FAB
+/// Features: Animated background, glassmorphism cards, gradient FAB,
+///           Session auto-logout modal, Logout confirm modal with loading state
 class TodoListView extends StatefulWidget {
   const TodoListView({super.key});
 
@@ -20,6 +22,7 @@ class _TodoListViewState extends State<TodoListView>
   late AnimationController _bgAnimController;
   late AnimationController _fadeController;
   late Animation<double> _fadeAnim;
+  late SessionService _sessionService;
 
   @override
   void initState() {
@@ -37,6 +40,11 @@ class _TodoListViewState extends State<TodoListView>
     _fadeAnim = CurvedAnimation(parent: _fadeController, curve: Curves.easeOut);
     _fadeController.forward();
 
+    // ── START SESSION TIMER ─────────────────────────────────────────
+    _sessionService = SessionService();
+    _sessionService.start(onTimeout: _onSessionTimeout);
+    // ───────────────────────────────────────────────────────────────
+
     WidgetsBinding.instance.addPostFrameCallback((_) {
       context.read<TodoViewModel>().loadTodos();
     });
@@ -44,9 +52,318 @@ class _TodoListViewState extends State<TodoListView>
 
   @override
   void dispose() {
+    _sessionService.stop(); // prevent timer firing after widget is dead
     _bgAnimController.dispose();
     _fadeController.dispose();
     super.dispose();
+  }
+
+  // ── Session Timeout Modal ───────────────────────────────────────
+  void _onSessionTimeout() {
+    if (!mounted) return;
+    showDialog(
+      context: context,
+      barrierDismissible: false, // force user to tap OK
+      builder: (ctx) => Dialog(
+        backgroundColor: Colors.transparent,
+        child: Container(
+          padding: const EdgeInsets.all(28),
+          decoration: BoxDecoration(
+            color: const Color(0xFF0D1020),
+            borderRadius: BorderRadius.circular(24),
+            border: Border.all(
+                color: const Color(0xFFFF4D6D).withValues(alpha: 0.3)),
+            boxShadow: [
+              BoxShadow(
+                color: const Color(0xFFFF4D6D).withValues(alpha: 0.1),
+                blurRadius: 30,
+              ),
+            ],
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              // Icon
+              Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFFF4D6D).withValues(alpha: 0.1),
+                  shape: BoxShape.circle,
+                  border: Border.all(
+                    color: const Color(0xFFFF4D6D).withValues(alpha: 0.3),
+                  ),
+                ),
+                child: const Icon(
+                  Icons.lock_clock_rounded,
+                  color: Color(0xFFFF4D6D),
+                  size: 36,
+                ),
+              ),
+              const SizedBox(height: 20),
+              const Text(
+                'Session Expired',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 20,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              const SizedBox(height: 10),
+              Text(
+                'You were inactive for 2 minutes.\nYour session has been locked for security.',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  color: Colors.white.withValues(alpha: 0.45),
+                  fontSize: 13,
+                  height: 1.6,
+                ),
+              ),
+              const SizedBox(height: 8),
+              // Security badge
+              Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFFF4D6D).withValues(alpha: 0.08),
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(
+                    color: const Color(0xFFFF4D6D).withValues(alpha: 0.2),
+                  ),
+                ),
+                child: const Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.shield_rounded,
+                        color: Color(0xFFFF4D6D), size: 12),
+                    SizedBox(width: 6),
+                    Text(
+                      'Auto-locked by CipherTask Security',
+                      style: TextStyle(
+                        color: Color(0xFFFF4D6D),
+                        fontSize: 11,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 24),
+              // Back to Login button
+              GestureDetector(
+                onTap: () async {
+                  final authVM = context.read<AuthViewModel>();
+                  final nav = Navigator.of(context);
+                  Navigator.pop(ctx);
+                  await authVM.logout();
+                  if (mounted) {
+                    nav.pushReplacementNamed(AppConstants.loginRoute);
+                  }
+                },
+                child: Container(
+                  width: double.infinity,
+                  height: 50,
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(14),
+                    gradient: const LinearGradient(
+                      colors: [Color(0xFFFF4D6D), Color(0xFFFF8C6B)],
+                      begin: Alignment.centerLeft,
+                      end: Alignment.centerRight,
+                    ),
+                    boxShadow: [
+                      BoxShadow(
+                        color: const Color(0xFFFF4D6D).withValues(alpha: 0.3),
+                        blurRadius: 16,
+                        offset: const Offset(0, 6),
+                      ),
+                    ],
+                  ),
+                  child: const Center(
+                    child: Text(
+                      'Back to Login',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.w700,
+                        fontSize: 15,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  // ── Logout with Confirm Modal + Loading ─────────────────────────
+  void _onLogout() {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) {
+        bool isLoading = false;
+
+        return StatefulBuilder(
+          builder: (context, setModalState) => Dialog(
+            backgroundColor: Colors.transparent,
+            child: Container(
+              padding: const EdgeInsets.all(24),
+              decoration: BoxDecoration(
+                color: const Color(0xFF0D1020),
+                borderRadius: BorderRadius.circular(24),
+                border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  // Icon
+                  Container(
+                    padding: const EdgeInsets.all(14),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF7B61FF).withValues(alpha: 0.1),
+                      shape: BoxShape.circle,
+                      border: Border.all(
+                        color: const Color(0xFF7B61FF).withValues(alpha: 0.3),
+                      ),
+                    ),
+                    child: const Icon(
+                      Icons.logout_rounded,
+                      color: Color(0xFF7B61FF),
+                      size: 28,
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  const Text(
+                    'Log Out?',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 18,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    'Your session will be securely terminated.',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      color: Colors.white.withValues(alpha: 0.4),
+                      fontSize: 13,
+                    ),
+                  ),
+                  const SizedBox(height: 24),
+
+                  // Loading state OR action buttons
+                  if (isLoading)
+                    Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 8),
+                      child: Column(
+                        children: [
+                          const SizedBox(
+                            width: 32,
+                            height: 32,
+                            child: CircularProgressIndicator(
+                              color: Color(0xFF7B61FF),
+                              strokeWidth: 2.5,
+                            ),
+                          ),
+                          const SizedBox(height: 12),
+                          Text(
+                            'Securing session...',
+                            style: TextStyle(
+                              color: Colors.white.withValues(alpha: 0.4),
+                              fontSize: 12,
+                            ),
+                          ),
+                        ],
+                      ),
+                    )
+                  else
+                    Row(
+                      children: [
+                        // Cancel
+                        Expanded(
+                          child: GestureDetector(
+                            onTap: () => Navigator.pop(ctx),
+                            child: Container(
+                              height: 46,
+                              decoration: BoxDecoration(
+                                color: Colors.white.withValues(alpha: 0.06),
+                                borderRadius: BorderRadius.circular(12),
+                                border: Border.all(
+                                  color: Colors.white.withValues(alpha: 0.1),
+                                ),
+                              ),
+                              child: const Center(
+                                child: Text(
+                                  'Cancel',
+                                  style: TextStyle(
+                                    color: Colors.white,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        // Confirm logout
+                        Expanded(
+                          child: GestureDetector(
+                            onTap: () async {
+                              setModalState(() => isLoading = true);
+                              _sessionService.stop();
+                              final authVM = context.read<AuthViewModel>();
+                              final nav = Navigator.of(context);
+                              await authVM.logout();
+                              if (mounted) {
+                                nav.pop();
+                                nav.pushReplacementNamed(
+                                    AppConstants.loginRoute);
+                              }
+                            },
+                            child: Container(
+                              height: 46,
+                              decoration: BoxDecoration(
+                                borderRadius: BorderRadius.circular(12),
+                                gradient: const LinearGradient(
+                                  colors: [
+                                    Color(0xFF7B61FF),
+                                    Color(0xFF4F6EF7)
+                                  ],
+                                  begin: Alignment.centerLeft,
+                                  end: Alignment.centerRight,
+                                ),
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: const Color(0xFF7B61FF)
+                                        .withValues(alpha: 0.3),
+                                    blurRadius: 12,
+                                    offset: const Offset(0, 4),
+                                  ),
+                                ],
+                              ),
+                              child: const Center(
+                                child: Text(
+                                  'Yes, Logout',
+                                  style: TextStyle(
+                                    color: Colors.white,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
+    );
   }
 
   @override
@@ -54,63 +371,67 @@ class _TodoListViewState extends State<TodoListView>
     final size = MediaQuery.of(context).size;
     return Scaffold(
       backgroundColor: const Color(0xFF050810),
-      body: Stack(
-        children: [
-          // ── Animated Background ─────────────────────────────
-          _AnimatedBackground(controller: _bgAnimController, size: size),
+      body: Listener(
+        behavior: HitTestBehavior.translucent,
+        onPointerDown: (_) => _sessionService.resetTimer(),
+        child: Stack(
+          children: [
+            // ── Animated Background ───────────────────────────────
+            _AnimatedBackground(controller: _bgAnimController, size: size),
 
-          // ── Main Content ────────────────────────────────────
-          SafeArea(
-            child: FadeTransition(
-              opacity: _fadeAnim,
-              child: Column(
-                children: [
-                  _buildAppBar(context),
-                  _buildStatsBar(),
-                  Expanded(
-                    child: Consumer<TodoViewModel>(
-                      builder: (context, todoVM, _) {
-                        if (todoVM.isLoading) {
-                          return const Center(
-                            child: CircularProgressIndicator(
-                              color: Color(0xFF00F5D4),
-                              strokeWidth: 2.5,
-                            ),
-                          );
-                        }
-                        if (todoVM.todos.isEmpty) {
-                          return _buildEmptyState();
-                        }
-                        return ListView.builder(
-                          padding: const EdgeInsets.fromLTRB(20, 8, 20, 100),
-                          itemCount: todoVM.todos.length,
-                          itemBuilder: (context, index) {
-                            final todo = todoVM.todos[index];
-                            return _TodoCard(
-                              todo: todo,
-                              index: index,
-                              onEdit: () =>
-                                  _showAddEditDialog(existingTodo: todo),
-                              onDelete: () => _confirmDelete(todo.id),
-                              onToggle: () => todoVM.toggleComplete(todo.id),
+            // ── Main Content ──────────────────────────────────────
+            SafeArea(
+              child: FadeTransition(
+                opacity: _fadeAnim,
+                child: Column(
+                  children: [
+                    _buildAppBar(context),
+                    _buildStatsBar(),
+                    Expanded(
+                      child: Consumer<TodoViewModel>(
+                        builder: (context, todoVM, _) {
+                          if (todoVM.isLoading) {
+                            return const Center(
+                              child: CircularProgressIndicator(
+                                color: Color(0xFF00F5D4),
+                                strokeWidth: 2.5,
+                              ),
                             );
-                          },
-                        );
-                      },
+                          }
+                          if (todoVM.todos.isEmpty) {
+                            return _buildEmptyState();
+                          }
+                          return ListView.builder(
+                            padding: const EdgeInsets.fromLTRB(20, 8, 20, 100),
+                            itemCount: todoVM.todos.length,
+                            itemBuilder: (context, index) {
+                              final todo = todoVM.todos[index];
+                              return _TodoCard(
+                                todo: todo,
+                                index: index,
+                                onEdit: () =>
+                                    _showAddEditDialog(existingTodo: todo),
+                                onDelete: () => _confirmDelete(todo.id),
+                                onToggle: () => todoVM.toggleComplete(todo.id),
+                              );
+                            },
+                          );
+                        },
+                      ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
             ),
-          ),
 
-          // ── Floating Action Button ──────────────────────────
-          Positioned(
-            bottom: 28,
-            right: 24,
-            child: _buildFAB(),
-          ),
-        ],
+            // ── Floating Action Button ────────────────────────────
+            Positioned(
+              bottom: 28,
+              right: 24,
+              child: _buildFAB(),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -161,7 +482,7 @@ class _TodoListViewState extends State<TodoListView>
             ),
           ),
           const Spacer(),
-          // Logout button
+          // Logout button — now triggers confirm modal
           GestureDetector(
             onTap: _onLogout,
             child: Container(
@@ -171,8 +492,8 @@ class _TodoListViewState extends State<TodoListView>
                 borderRadius: BorderRadius.circular(20),
                 border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
               ),
-              child: Row(
-                children: const [
+              child: const Row(
+                children: [
                   Icon(Icons.logout_rounded,
                       color: Color(0xFF6B7280), size: 16),
                   SizedBox(width: 6),
@@ -223,8 +544,8 @@ class _TodoListViewState extends State<TodoListView>
                   color: const Color(0xFF00F5D4).withValues(alpha: 0.1),
                   borderRadius: BorderRadius.circular(20),
                 ),
-                child: Row(
-                  children: const [
+                child: const Row(
+                  children: [
                     Icon(Icons.lock_rounded,
                         color: Color(0xFF00F5D4), size: 12),
                     SizedBox(width: 4),
@@ -328,9 +649,9 @@ class _TodoListViewState extends State<TodoListView>
             ),
           ],
         ),
-        child: Row(
+        child: const Row(
           mainAxisSize: MainAxisSize.min,
-          children: const [
+          children: [
             Icon(Icons.add_rounded, color: Colors.white, size: 22),
             SizedBox(width: 8),
             Text('New Task',
@@ -634,13 +955,6 @@ class _TodoListViewState extends State<TodoListView>
       ),
     );
   }
-
-  void _onLogout() async {
-    await context.read<AuthViewModel>().logout();
-    if (mounted) {
-      Navigator.pushReplacementNamed(context, AppConstants.loginRoute);
-    }
-  }
 }
 
 // ── Premium Todo Card ─────────────────────────────────────────────
@@ -700,7 +1014,7 @@ class _TodoCard extends StatelessWidget {
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // ── Checkbox ───────────────────────────────────
+            // ── Checkbox ─────────────────────────────────────
             GestureDetector(
               onTap: onToggle,
               child: AnimatedContainer(
@@ -736,7 +1050,7 @@ class _TodoCard extends StatelessWidget {
             ),
             const SizedBox(width: 14),
 
-            // ── Content ────────────────────────────────────
+            // ── Content ───────────────────────────────────────
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -793,7 +1107,7 @@ class _TodoCard extends StatelessWidget {
               ),
             ),
 
-            // ── Actions ────────────────────────────────────
+            // ── Actions ───────────────────────────────────────
             Column(
               children: [
                 GestureDetector(

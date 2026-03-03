@@ -1,10 +1,7 @@
 plugins {
     id "com.android.application"
     id "kotlin-android"
-    // The Flutter Gradle Plugin must be applied after the Android and Kotlin Gradle plugins.
     id "dev.flutter.flutter-gradle-plugin"
-    // Google Services plugin for Firebase
-    id "com.google.gms.google-services"
 }
 
 android {
@@ -21,7 +18,6 @@ android {
         jvmTarget = "17"
     }
 
-    // Explicitly tell Gradle to look in kotlin/ for sources
     sourceSets {
         main {
             java.srcDirs += 'src/main/kotlin'
@@ -30,45 +26,30 @@ android {
 
     defaultConfig {
         applicationId = "com.example.ciphertask"
-        minSdk = 23
-        targetSdk = flutter.targetSdkVersion
+        minSdkVersion 23
+        targetSdkVersion 34
         versionCode = flutter.versionCode
         versionName = flutter.versionName
-        
-        // Enable multiDex for large apps
         multiDexEnabled true
-        
-        // Support all ABIs for better emulator compatibility
-        ndk {
-            abiFilters 'armeabi-v7a', 'arm64-v8a', 'x86', 'x86_64'
-        }
     }
 
     buildTypes {
         release {
             signingConfig = signingConfigs.debug
-            
-            // Enable minification for release builds
             minifyEnabled true
             shrinkResources true
-            
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
         }
         debug {
-            // Enable debuggable for emulator testing
             debuggable true
-        }
-    }
-    
-    // ABI splits for different architectures
-    splits {
-        abi {
-            enable false // Disable for now to build universal APK for emulators
-            universalApk true
         }
     }
 }
 
 flutter {
     source = "../.."
+}
+
+dependencies {
+    implementation 'androidx.multidex:multidex:2.0.1'
 }

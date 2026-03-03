@@ -4,7 +4,7 @@
 
 ---
 
-Apk File: [Download APK](https://github.com/landoynicole4-design/ciphertask/releases/download/v1.0/app-debug.apk)
+Apk File: [Download APK](https://github.com/landoynicole4-design/ciphertask/releases/download/v1.0/app-release.apk)
 
 
 

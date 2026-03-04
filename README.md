@@ -120,28 +120,3 @@ flutter pub run build_runner build
 flutter run
 ```
 
-### Firebase Setup
-
-1. Create a Firebase project at [console.firebase.google.com](https://console.firebase.google.com)
-2. Enable Email/Password authentication
-3. Download `google-services.json` (Android) and `GoogleService-Info.plist` (iOS)
-4. Place them in `android/app/` and `ios/Runner/` respectively
-
----
-
-## ✅ Rubric Checklist
-
-- [x] Database encryption (Hive with HiveAesCipher)
-- [x] Keys in FlutterSecureStorage (Keystore/Keychain) — never hardcoded
-- [x] AES-256 field encryption on secretNote
-- [x] Strict MVVM folder structure
-- [x] ViewModels handle all logic (no DB calls in Views)
-- [x] Services properly separated and injected
-- [x] Biometric login (local_auth)
-- [x] Auto-logout after 2 minutes of inactivity
-- [x] Timer resets on user touch (Listener widget)
-- [x] Privacy blur in Recent Apps (FLAG_SECURE)
-- [x] Firebase Auth registration and login (HTTPS)
-- [x] Full CRUD: Add, Edit, Toggle, Delete tasks
-- [x] **BONUS**: 6-digit OTP screen after registration (+5 pts)
-- [x] **BONUS**: Screenshot prevention via flutter_windowmanager (+5 pts)

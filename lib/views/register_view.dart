@@ -118,6 +118,8 @@ class _RegisterViewState extends State<RegisterView>
   Widget build(BuildContext context) {
     final size = MediaQuery.of(context).size;
     final isSmallScreen = size.height < 700;
+    final keyboardHeight = MediaQuery.of(context).viewInsets.bottom;
+    final hasKeyboard = keyboardHeight > 0;
 
     return Scaffold(
       backgroundColor: const Color(0xFF050810),
@@ -137,15 +139,16 @@ class _RegisterViewState extends State<RegisterView>
                       keyboardDismissBehavior:
                           ScrollViewKeyboardDismissBehavior.onDrag,
                       padding: EdgeInsets.symmetric(
-                          horizontal: size.width > 400 ? 24 : 16,
-                          vertical: isSmallScreen ? 16 : 32),
+                        horizontal: size.width > 400 ? 24 : 16,
+                        vertical: isSmallScreen ? 12 : 20,
+                      ),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
                           _buildBackButton(context),
-                          SizedBox(height: isSmallScreen ? 12 : 16),
+                          SizedBox(height: isSmallScreen ? 8 : 12),
                           _buildHeader(authVM),
-                          SizedBox(height: isSmallScreen ? 20 : 28),
+                          SizedBox(height: isSmallScreen ? 16 : 20),
                           AnimatedSwitcher(
                             duration: const Duration(milliseconds: 350),
                             switchInCurve: Curves.easeOut,
@@ -166,10 +169,11 @@ class _RegisterViewState extends State<RegisterView>
                                 ? _buildOtpSection(authVM, isSmallScreen)
                                 : _buildRegistrationForm(authVM, isSmallScreen),
                           ),
+                          // Dynamic bottom spacing when keyboard is visible
                           AnimatedContainer(
                             duration: const Duration(milliseconds: 200),
-                            height: MediaQuery.of(context).viewInsets.bottom > 0
-                                ? 20
+                            height: hasKeyboard
+                                ? (keyboardHeight * 0.2).clamp(16.0, 40.0)
                                 : 0,
                           ),
                         ],
@@ -186,21 +190,24 @@ class _RegisterViewState extends State<RegisterView>
   }
 
   Widget _buildBackButton(BuildContext context) {
-    return GestureDetector(
-      onTap: () => Navigator.pop(context),
-      child: Container(
-        width: 44,
-        height: 44,
-        decoration: BoxDecoration(
-          color: Colors.white.withValues(alpha: 0.05),
-          borderRadius: BorderRadius.circular(14),
-          border: Border.all(
-              color: Colors.white.withValues(alpha: 0.1), width: 1.2),
-        ),
-        child: const Icon(
-          Icons.arrow_back_rounded,
-          color: Color(0xFF6B7280),
-          size: 20,
+    return Align(
+      alignment: Alignment.centerLeft,
+      child: GestureDetector(
+        onTap: () => Navigator.pop(context),
+        child: Container(
+          width: 40,
+          height: 40,
+          decoration: BoxDecoration(
+            color: Colors.white.withValues(alpha: 0.05),
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(
+                color: Colors.white.withValues(alpha: 0.1), width: 1.2),
+          ),
+          child: const Icon(
+            Icons.arrow_back_rounded,
+            color: Color(0xFF6B7280),
+            size: 18,
+          ),
         ),
       ),
     );
@@ -212,10 +219,12 @@ class _RegisterViewState extends State<RegisterView>
       child: Text(
         _showOtpField ? 'Verify Your Account' : 'Create Your Secure Account',
         key: ValueKey(_showOtpField),
+        textAlign: TextAlign.center,
         style: const TextStyle(
           color: Colors.white,
           fontSize: 24,
           fontWeight: FontWeight.w700,
+          height: 1.3,
         ),
       ),
     );
@@ -257,34 +266,34 @@ class _RegisterViewState extends State<RegisterView>
                 color: const Color(0xFF7B61FF).withValues(alpha: 0.1),
                 borderRadius: BorderRadius.circular(10),
               ),
-              child: Row(
+              child: const Row(
                 mainAxisSize: MainAxisSize.min,
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  const Icon(Icons.shield_outlined,
+                  Icon(Icons.shield_outlined,
                       color: Color(0xFF7B61FF), size: 14),
-                  const SizedBox(width: 6),
+                  SizedBox(width: 6),
                   Flexible(
                     child: Text(
                       'End-to-end encrypted',
                       style: TextStyle(
-                          color: const Color(0xFF7B61FF),
+                          color: Color(0xFF7B61FF),
                           fontSize: 11,
                           fontWeight: FontWeight.w600),
                       overflow: TextOverflow.ellipsis,
                     ),
                   ),
-                  const SizedBox(width: 4),
-                  const Text(
+                  SizedBox(width: 4),
+                  Text(
                     '•',
                     style: TextStyle(color: Color(0xFF7B61FF), fontSize: 12),
                   ),
-                  const SizedBox(width: 4),
+                  SizedBox(width: 4),
                   Flexible(
                     child: Text(
                       'AES-256',
                       style: TextStyle(
-                          color: const Color(0xFF7B61FF),
+                          color: Color(0xFF7B61FF),
                           fontSize: 11,
                           fontWeight: FontWeight.w600),
                       overflow: TextOverflow.ellipsis,
@@ -376,9 +385,7 @@ class _RegisterViewState extends State<RegisterView>
                 }
                 return null;
               },
-              onChanged: (_) {
-                _formKey.currentState?.validate();
-              },
+              onChanged: (_) => setState(() {}),
               isSmallScreen: isSmallScreen,
             ),
             SizedBox(height: isSmallScreen ? 16 : 20),
@@ -634,12 +641,30 @@ class _RegisterViewState extends State<RegisterView>
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Container(
+          _buildOtpEmailSection(authVM, isSmallScreen),
+          SizedBox(height: isSmallScreen ? 16 : 24),
+          _buildOtpInputSection(isSmallScreen),
+          SizedBox(height: isSmallScreen ? 12 : 16),
+          _buildOtpSimulationBox(authVM),
+          SizedBox(height: isSmallScreen ? 16 : 20),
+          _buildOtpErrorMessage(authVM),
+          _buildResendRow(authVM),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildOtpEmailSection(AuthViewModel authVM, bool isSmallScreen) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: [
+        Center(
+          child: Container(
             width: isSmallScreen ? 60 : 80,
             height: isSmallScreen ? 60 : 80,
-            decoration: BoxDecoration(
+            decoration: const BoxDecoration(
               shape: BoxShape.circle,
-              gradient: const LinearGradient(
+              gradient: LinearGradient(
                 colors: [Color(0xFF4ADE80), Color(0xFF00F5D4)],
                 begin: Alignment.topLeft,
                 end: Alignment.bottomRight,
@@ -648,142 +673,200 @@ class _RegisterViewState extends State<RegisterView>
             child: Icon(Icons.check_circle_outline_rounded,
                 color: Colors.white, size: isSmallScreen ? 30 : 40),
           ),
-          SizedBox(height: isSmallScreen ? 16 : 20),
-          const Text(
-            'Check Your Email',
-            textAlign: TextAlign.center,
-            style: TextStyle(
-                color: Colors.white, fontSize: 20, fontWeight: FontWeight.w700),
+        ),
+        SizedBox(height: isSmallScreen ? 16 : 20),
+        const Text(
+          'Check Your Email',
+          textAlign: TextAlign.center,
+          style: TextStyle(
+              color: Colors.white, fontSize: 20, fontWeight: FontWeight.w700),
+        ),
+        const SizedBox(height: 8),
+        Text(
+          authVM.pendingEmail,
+          textAlign: TextAlign.center,
+          style: const TextStyle(
+              color: Color(0xFF00F5D4),
+              fontSize: 14,
+              fontWeight: FontWeight.w600),
+        ),
+        SizedBox(height: isSmallScreen ? 16 : 24),
+        const Text(
+          'Enter the 6-digit code',
+          textAlign: TextAlign.center,
+          style: TextStyle(color: Color(0xFF6B7280), fontSize: 14),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildOtpInputSection(bool isSmallScreen) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final keyboardHeight = MediaQuery.of(context).viewInsets.bottom;
+        final hasKeyboard = keyboardHeight > 0;
+
+        // Responsive sizing based on screen width
+        final maxWidth = constraints.maxWidth;
+        const itemCount = 6;
+        final totalSpacing = (itemCount - 1) * 8.0; // 8dp gap between items
+        final availableWidth = maxWidth - 16.0; // 8dp padding on each side
+        final itemWidth = (availableWidth - totalSpacing) / itemCount;
+        final constrainedWidth = itemWidth.clamp(28.0, 50.0);
+
+        return SingleChildScrollView(
+          reverse: hasKeyboard,
+          physics: const NeverScrollableScrollPhysics(),
+          child: Padding(
+            padding: EdgeInsets.only(
+              bottom: hasKeyboard ? keyboardHeight * 0.3 : 0,
+            ),
+            child: Center(
+              child: SizedBox(
+                width: double.infinity,
+                child: Wrap(
+                  alignment: WrapAlignment.center,
+                  spacing: 8.0,
+                  runSpacing: 8.0,
+                  children: List.generate(
+                    6,
+                    (index) => _buildOtpInputField(index, constrainedWidth),
+                  ),
+                ),
+              ),
+            ),
           ),
-          const SizedBox(height: 8),
-          Text(
-            authVM.pendingEmail,
+        );
+      },
+    );
+  }
+
+  Widget _buildOtpInputField(int index, double width) {
+    return AnimatedBuilder(
+      animation:
+          Listenable.merge([_otpFocusNodes[index], _otpControllers[index]]),
+      builder: (context, child) {
+        final isFocused = _otpFocusNodes[index].hasFocus;
+        final hasValue = _otpControllers[index].text.isNotEmpty;
+
+        return SizedBox(
+          width: width,
+          height: width + 10,
+          child: TextFormField(
+            controller: _otpControllers[index],
+            focusNode: _otpFocusNodes[index],
+            keyboardType: TextInputType.number,
             textAlign: TextAlign.center,
             style: const TextStyle(
-                color: Color(0xFF00F5D4),
-                fontSize: 14,
-                fontWeight: FontWeight.w600),
+                color: Colors.white, fontSize: 18, fontWeight: FontWeight.w700),
+            inputFormatters: [
+              FilteringTextInputFormatter.digitsOnly,
+              LengthLimitingTextInputFormatter(1),
+            ],
+            decoration: InputDecoration(
+              filled: true,
+              fillColor: isFocused
+                  ? Colors.white.withValues(alpha: 0.08)
+                  : Colors.white.withValues(alpha: 0.05),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: BorderSide(
+                    color: Colors.white.withValues(alpha: 0.1), width: 1.2),
+              ),
+              enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: BorderSide(
+                  color: hasValue
+                      ? const Color(0xFF00F5D4).withValues(alpha: 0.5)
+                      : Colors.white.withValues(alpha: 0.1),
+                  width: 1.2,
+                ),
+              ),
+              focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide:
+                    const BorderSide(color: Color(0xFF00F5D4), width: 1.8),
+              ),
+              errorBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide:
+                    const BorderSide(color: Color(0xFFFF4D6D), width: 1.2),
+              ),
+              focusedErrorBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide:
+                    const BorderSide(color: Color(0xFFFF4D6D), width: 1.8),
+              ),
+              contentPadding:
+                  const EdgeInsets.symmetric(vertical: 0, horizontal: 0),
+            ),
+            onChanged: (value) {
+              if (value.isNotEmpty) {
+                // Move to next field if available
+                if (index < 5) {
+                  _otpFocusNodes[index + 1].requestFocus();
+                } else {
+                  // Last field - verify OTP automatically
+                  if (_otpControllers.every((c) => c.text.isNotEmpty)) {
+                    Future.delayed(
+                        const Duration(milliseconds: 100), _verifyOtp);
+                  }
+                }
+              }
+            },
+            onFieldSubmitted: (value) {
+              if (index < 5 && value.isNotEmpty) {
+                _otpFocusNodes[index + 1].requestFocus();
+              }
+            },
           ),
-          SizedBox(height: isSmallScreen ? 16 : 24),
-          const Text(
-            'Enter the 6-digit code',
-            textAlign: TextAlign.center,
-            style: TextStyle(color: Color(0xFF6B7280), fontSize: 14),
-          ),
-          SizedBox(height: isSmallScreen ? 12 : 16),
-          _buildOtpInputs(isSmallScreen),
-          SizedBox(height: isSmallScreen ? 12 : 16),
-          _buildOtpSimulationBox(authVM),
-          SizedBox(height: isSmallScreen ? 16 : 20),
-          AnimatedSize(
-            duration: const Duration(milliseconds: 300),
-            curve: Curves.easeInOut,
-            child: authVM.errorMessage != null
-                ? Padding(
-                    padding: const EdgeInsets.only(bottom: 16),
-                    child: GestureDetector(
-                      onTap: () => authVM.clearError(),
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 14, vertical: 12),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFFFF4D6D).withValues(alpha: 0.1),
-                          borderRadius: BorderRadius.circular(12),
-                          border: Border.all(
-                              color: const Color(0xFFFF4D6D)
-                                  .withValues(alpha: 0.4)),
-                        ),
-                        child: Row(
-                          children: [
-                            const Icon(Icons.error_outline_rounded,
-                                color: Color(0xFFFF4D6D), size: 18),
-                            const SizedBox(width: 10),
-                            Expanded(
-                              child: Text(authVM.errorMessage!,
-                                  style: const TextStyle(
-                                      color: Color(0xFFFF4D6D), fontSize: 13)),
-                            ),
-                            const Icon(Icons.close_rounded,
-                                color: Color(0xFFFF4D6D), size: 16),
-                          ],
-                        ),
+        );
+      },
+    );
+  }
+
+  Widget _buildOtpErrorMessage(AuthViewModel authVM) {
+    return AnimatedSize(
+      duration: const Duration(milliseconds: 300),
+      curve: Curves.easeInOut,
+      child: authVM.errorMessage != null
+          ? Padding(
+              padding: const EdgeInsets.only(bottom: 16),
+              child: GestureDetector(
+                onTap: () => context.read<AuthViewModel>().clearError(),
+                child: Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFFF4D6D).withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(
+                        color: const Color(0xFFFF4D6D).withValues(alpha: 0.4)),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.error_outline_rounded,
+                          color: Color(0xFFFF4D6D), size: 18),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Text(authVM.errorMessage!,
+                            style: const TextStyle(
+                                color: Color(0xFFFF4D6D), fontSize: 13)),
                       ),
-                    ),
-                  )
-                : const SizedBox.shrink(),
-          ),
-          _buildResendRow(authVM),
-        ],
-      ),
+                      const Icon(Icons.close_rounded,
+                          color: Color(0xFFFF4D6D), size: 16),
+                    ],
+                  ),
+                ),
+              ),
+            )
+          : const SizedBox.shrink(),
     );
   }
 
   Widget _buildOtpInputs(bool isSmallScreen) {
-    final spacing = isSmallScreen ? 2.0 : 3.0;
-    final width = isSmallScreen ? 32.0 : 40.0;
-    final height = isSmallScreen ? 42.0 : 50.0;
-    final fontSize = isSmallScreen ? 14.0 : 18.0;
-
-    return SingleChildScrollView(
-      scrollDirection: Axis.horizontal,
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: List.generate(6, (index) {
-          return Container(
-            width: width,
-            height: height,
-            margin: EdgeInsets.symmetric(horizontal: spacing),
-            child: TextFormField(
-              controller: _otpControllers[index],
-              focusNode: _otpFocusNodes[index],
-              keyboardType: TextInputType.number,
-              textAlign: TextAlign.center,
-              style: TextStyle(
-                  color: Colors.white,
-                  fontSize: fontSize,
-                  fontWeight: FontWeight.w700),
-              inputFormatters: [
-                FilteringTextInputFormatter.digitsOnly,
-                LengthLimitingTextInputFormatter(1),
-              ],
-              decoration: InputDecoration(
-                filled: true,
-                fillColor: Colors.white.withValues(alpha: 0.05),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
-                  borderSide: BorderSide(
-                      color: Colors.white.withValues(alpha: 0.1), width: 1.2),
-                ),
-                enabledBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
-                  borderSide: BorderSide(
-                      color: Colors.white.withValues(alpha: 0.1), width: 1.2),
-                ),
-                focusedBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
-                  borderSide:
-                      const BorderSide(color: Color(0xFF00F5D4), width: 1.5),
-                ),
-                contentPadding: EdgeInsets.symmetric(
-                  vertical: isSmallScreen ? 12 : 14,
-                  horizontal: 2,
-                ),
-              ),
-              onChanged: (value) {
-                if (value.isNotEmpty && index < 5) {
-                  _otpFocusNodes[index + 1].requestFocus();
-                } else if (value.isEmpty && index > 0) {
-                  _otpFocusNodes[index - 1].requestFocus();
-                }
-                if (_otpControllers.every((c) => c.text.isNotEmpty)) {
-                  _verifyOtp();
-                }
-              },
-            ),
-          );
-        }),
-      ),
-    );
+    // This method is now replaced by _buildOtpInputSection
+    return const SizedBox.shrink();
   }
 
   Widget _buildOtpSimulationBox(AuthViewModel authVM) {
@@ -1064,20 +1147,32 @@ class _RegisterViewState extends State<RegisterView>
     });
   }
 
+  void _clearOtpFields() {
+    for (final controller in _otpControllers) {
+      controller.clear();
+    }
+    _otpFocusNodes[0].requestFocus();
+  }
+
   Future<void> _verifyOtp() async {
     final code = _otpControllers.map((c) => c.text).join();
     final authVM = context.read<AuthViewModel>();
+
+    // Add a small delay to ensure all fields are filled
+    await Future.delayed(const Duration(milliseconds: 100));
+
     final success = await authVM.verifyOtp(code);
     if (!mounted) return;
     if (success) {
       _showWelcomeModal();
     } else {
-      _shakeController.forward(from: 0);
-      for (final c in _otpControllers) {
-        c.clear();
-      }
-      _otpFocusNodes[0].requestFocus();
+      _shakeAnimation();
+      _clearOtpFields();
     }
+  }
+
+  void _shakeAnimation() {
+    _shakeController.forward(from: 0);
   }
 
   void _showWelcomeModal() {
@@ -1096,9 +1191,9 @@ class _RegisterViewState extends State<RegisterView>
             Container(
               width: 80,
               height: 80,
-              decoration: BoxDecoration(
+              decoration: const BoxDecoration(
                 shape: BoxShape.circle,
-                gradient: const LinearGradient(
+                gradient: LinearGradient(
                   colors: [Color(0xFF00F5D4), Color(0xFF7B61FF)],
                   begin: Alignment.topLeft,
                   end: Alignment.bottomRight,

@@ -4,7 +4,7 @@
 
 ---
 
-Apk File: (build/app/outputs/flutter-apk/app-release.apk)[CipherTask Download APK](https://github.com/landoynicole4-design/ciphertask/releases/download/v1.0/app-release.apk)
+Apk File: build/app/outputs/flutter-apk/CipherTask.apk
 
 
 

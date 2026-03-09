@@ -1,5 +1,10 @@
 // GENERATED CODE - DO NOT MODIFY BY HAND
+
 part of 'todo_model.dart';
+
+// **************************************************************************
+// TypeAdapterGenerator
+// **************************************************************************
 
 class TodoModelAdapter extends TypeAdapter<TodoModel> {
   @override
@@ -12,6 +17,7 @@ class TodoModelAdapter extends TypeAdapter<TodoModel> {
       for (int i = 0; i < numOfFields; i++) reader.readByte(): reader.read(),
     };
     return TodoModel(
+      userId: fields[6] as String,
       id: fields[0] as String,
       title: fields[1] as String,
       description: fields[2] as String,
@@ -24,13 +30,21 @@ class TodoModelAdapter extends TypeAdapter<TodoModel> {
   @override
   void write(BinaryWriter writer, TodoModel obj) {
     writer
+      ..writeByte(7)
       ..writeByte(6)
-      ..writeByte(0)..write(obj.id)
-      ..writeByte(1)..write(obj.title)
-      ..writeByte(2)..write(obj.description)
-      ..writeByte(3)..write(obj.secretNote)
-      ..writeByte(4)..write(obj.isCompleted)
-      ..writeByte(5)..write(obj.createdAt);
+      ..write(obj.userId)
+      ..writeByte(0)
+      ..write(obj.id)
+      ..writeByte(1)
+      ..write(obj.title)
+      ..writeByte(2)
+      ..write(obj.description)
+      ..writeByte(3)
+      ..write(obj.secretNote)
+      ..writeByte(4)
+      ..write(obj.isCompleted)
+      ..writeByte(5)
+      ..write(obj.createdAt);
   }
 
   @override

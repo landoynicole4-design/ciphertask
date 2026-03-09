@@ -13,17 +13,6 @@ subprojects {
     project.evaluationDependsOn(":app")
 }
 
-// Fix for plugins missing namespace declaration
-subprojects {
-    plugins.withId("com.android.library") {
-        android {
-            if (namespace == null) {
-                namespace = group
-            }
-        }
-    }
-}
-
 tasks.register("clean", Delete) {
     delete rootProject.buildDir
 }

@@ -4,6 +4,7 @@ part 'todo_model.g.dart';
 
 /// Represents a single To-Do task stored in the encrypted Hive database.
 ///
+/// [userId]      - Email of the owning user — used to filter tasks per account
 /// [id]          - Unique identifier (UUID)
 /// [title]       - Plain task title (still protected by DB encryption)
 /// [description] - General description (still protected by DB encryption)
@@ -13,6 +14,11 @@ part 'todo_model.g.dart';
 /// [createdAt]   - Timestamp of creation
 @HiveType(typeId: 0)
 class TodoModel extends HiveObject {
+  // FIX: Added userId so tasks are scoped per account.
+  // Stored at HiveField(6) to avoid breaking existing field indices.
+  @HiveField(6)
+  String userId;
+
   @HiveField(0)
   final String id;
 
@@ -23,9 +29,9 @@ class TodoModel extends HiveObject {
   String description;
 
   /// This field is stored as AES-256 ciphertext in the database.
-  /// M2 (EncryptionService) handles encryption/decryption of this field.
+  /// EncryptionService handles encryption/decryption of this field.
   @HiveField(3)
-  String secretNote; // Stored encrypted
+  String secretNote;
 
   @HiveField(4)
   bool isCompleted;
@@ -34,6 +40,7 @@ class TodoModel extends HiveObject {
   DateTime createdAt;
 
   TodoModel({
+    required this.userId,
     required this.id,
     required this.title,
     required this.description,
@@ -42,7 +49,6 @@ class TodoModel extends HiveObject {
     required this.createdAt,
   });
 
-  /// Creates a copy with updated fields (used in update operations)
   TodoModel copyWith({
     String? title,
     String? description,
@@ -50,6 +56,7 @@ class TodoModel extends HiveObject {
     bool? isCompleted,
   }) {
     return TodoModel(
+      userId: userId,
       id: id,
       title: title ?? this.title,
       description: description ?? this.description,

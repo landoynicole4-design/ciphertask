@@ -3,6 +3,7 @@ import 'package:crypto/crypto.dart';
 import 'package:flutter/material.dart';
 import 'package:local_auth/local_auth.dart';
 import 'package:hive/hive.dart';
+import 'package:hive_flutter/hive_flutter.dart';
 import '../models/user_model.dart';
 import '../services/key_storage_service.dart';
 import '../services/session_service.dart';
@@ -27,17 +28,22 @@ class AuthViewModel extends ChangeNotifier {
   String? _errorMessage;
   Box? _usersBox;
 
+  // ── Cached flag: true once a user has logged in and saved credentials ──
+  // Loaded async on init, updated synchronously on login/logout.
+  // Exposed as a plain bool so the UI can read it without awaiting.
+  bool _hasStoredCredentials = false;
+
   // OTP State
   final OTPService _otpService = OTPService();
   bool _otpSent = false;
   bool _isVerified = false;
   String _pendingEmail = '';
   String _pendingPassword = '';
-  int _resendTimer = 30;
+  int _resendTimer = 120; // ✅ Changed from 30 → 120
   bool _showResendButton = false;
   bool _isResending = false;
 
-  // Getters
+  // ── Getters ──────────────────────────────────────────────────────────────
   UserModel? get currentUser => _currentUser;
   bool get isLoading => _isLoading;
   String? get errorMessage => _errorMessage;
@@ -50,6 +56,10 @@ class AuthViewModel extends ChangeNotifier {
   String get pendingEmail => _pendingEmail;
   String get currentOtp => _otpService.currentOTP;
 
+  /// True when a saved account exists in secure storage.
+  /// The biometric button uses this to decide whether login is allowed.
+  bool get hasStoredCredentials => _hasStoredCredentials;
+
   AuthViewModel({
     required LocalAuthentication localAuth,
     required KeyStorageService keyStorage,
@@ -61,7 +71,38 @@ class AuthViewModel extends ChangeNotifier {
   }
 
   Future<void> _initUsersBox() async {
-    _usersBox = await Hive.openBox(_usersBoxName);
+    try {
+      final hiveKey = await _keyStorage.retrieveOrGenerateHiveKey();
+      if (!Hive.isBoxOpen(_usersBoxName)) {
+        // hive ^2.x API: encryptionCipher is a named param on openBox()
+        // openEncryptedBox() does not exist in hive 2.x and will cause errors.
+        _usersBox = await Hive.openBox(
+          _usersBoxName,
+          encryptionCipher: HiveAesCipher(hiveKey),
+        );
+      } else {
+        _usersBox = Hive.box(_usersBoxName);
+      }
+    } catch (e) {
+      // Fallback: corrupted or mismatched box (e.g. after reinstall) —
+      // wipe and recreate so the app never gets stuck in a crash loop.
+      await Hive.deleteBoxFromDisk(_usersBoxName);
+      final hiveKey = await _keyStorage.retrieveOrGenerateHiveKey();
+      _usersBox = await Hive.openBox(
+        _usersBoxName,
+        encryptionCipher: HiveAesCipher(hiveKey),
+      );
+    }
+    await _refreshStoredCredentialsFlag();
+  }
+
+  /// Reads secure storage and updates [_hasStoredCredentials].
+  /// Called on init, after login, and after logout.
+  Future<void> _refreshStoredCredentialsFlag() async {
+    final savedEmail =
+        await _keyStorage.retrieveKey(AppConstants.currentUserEmailKey);
+    _hasStoredCredentials = savedEmail != null && savedEmail.isNotEmpty;
+    notifyListeners();
   }
 
   /// Register a new user locally
@@ -93,12 +134,16 @@ class AuthViewModel extends ChangeNotifier {
 
       await _usersBox!.put(email.toLowerCase(), user.toJson());
 
-      // Mark first login complete
+      // Persist session markers
       await _keyStorage.storeKey(AppConstants.hasLoggedInOnceKey, 'true');
       await _keyStorage.storeKey(
           AppConstants.currentUserEmailKey, email.toLowerCase());
 
       _currentUser = user;
+
+      // Refresh cached flag so biometric button unlocks immediately
+      await _refreshStoredCredentialsFlag();
+
       _startSession();
       notifyListeners();
       return true;
@@ -139,9 +184,12 @@ class AuthViewModel extends ChangeNotifier {
 
       _currentUser = user;
 
-      // Mark first login complete
+      // Persist session markers
       await _keyStorage.storeKey(AppConstants.hasLoggedInOnceKey, 'true');
       await _keyStorage.storeKey(AppConstants.currentUserEmailKey, emailLower);
+
+      // Refresh cached flag — biometric button becomes available after this
+      await _refreshStoredCredentialsFlag();
 
       _startSession();
       notifyListeners();
@@ -155,7 +203,7 @@ class AuthViewModel extends ChangeNotifier {
     }
   }
 
-  /// Check if biometrics are available
+  /// Check if biometrics are available on this device
   Future<bool> canUseBiometrics() async {
     final hasLoggedInOnce =
         await _keyStorage.retrieveKey(AppConstants.hasLoggedInOnceKey);
@@ -184,7 +232,9 @@ class AuthViewModel extends ChangeNotifier {
     return await _localAuth.getAvailableBiometrics();
   }
 
-  /// Login with biometrics
+  /// Login with biometrics.
+  /// Callers should check [hasStoredCredentials] before invoking this
+  /// (LoginView does this — see _onBiometricPressed guard).
   Future<bool> loginWithBiometrics() async {
     _setLoading(true);
     try {
@@ -207,7 +257,7 @@ class AuthViewModel extends ChangeNotifier {
         return false;
       }
 
-      // Restore user from local storage
+      // Restore user from secure storage
       final savedEmail =
           await _keyStorage.retrieveKey(AppConstants.currentUserEmailKey);
       if (savedEmail == null) {
@@ -239,23 +289,40 @@ class AuthViewModel extends ChangeNotifier {
     }
   }
 
-  /// Logout
+  /// Logout — clears session, current user, and refreshes credential flag
   Future<void> logout() async {
     _sessionService.stop();
     _currentUser = null;
     _errorMessage = null;
-    // Clear OTP state on logout
+
+    // Clear OTP state
     _otpSent = false;
     _isVerified = false;
     _pendingEmail = '';
     _pendingPassword = '';
     _showResendButton = false;
-    _resendTimer = 30;
+    _resendTimer = 120; // ✅ Changed from 30 → 120
     _otpService.clearOTP();
+
+    // NOTE: We intentionally do NOT clear currentUserEmailKey on logout.
+    // This keeps hasStoredCredentials = true so biometric login remains
+    // available the next time the user opens the app.
+    // To fully revoke biometric access, call _clearStoredCredentials() instead.
+    await _refreshStoredCredentialsFlag();
+
     notifyListeners();
   }
 
-  /// Called on user activity
+  /// Call this if you ever want to fully revoke saved credentials
+  /// (e.g. "Remove saved account" settings option).
+  Future<void> clearStoredCredentials() async {
+    await _keyStorage.deleteKey(AppConstants.currentUserEmailKey);
+    await _keyStorage.deleteKey(AppConstants.hasLoggedInOnceKey);
+    _hasStoredCredentials = false;
+    notifyListeners();
+  }
+
+  /// Called on user activity to reset the session timeout
   void onUserActivity() {
     _sessionService.resetTimer();
   }
@@ -288,7 +355,7 @@ class AuthViewModel extends ChangeNotifier {
     return digest.toString();
   }
 
-  /// Send OTP to the given contact (email)
+  /// Send OTP to the given email
   void sendOtp(String email, String password) {
     _pendingEmail = email;
     _pendingPassword = password;
@@ -305,7 +372,6 @@ class AuthViewModel extends ChangeNotifier {
     if (isValid) {
       _isVerified = true;
       notifyListeners();
-      // Proceed with registration
       final success = await register(_pendingEmail, _pendingPassword);
       return success;
     } else {
@@ -322,15 +388,15 @@ class AuthViewModel extends ChangeNotifier {
     _pendingEmail = '';
     _pendingPassword = '';
     _showResendButton = false;
-    _resendTimer = 30;
+    _resendTimer = 120; // ✅ Changed from 30 → 120
     _otpService.clearOTP();
     notifyListeners();
   }
 
-  /// Start the resend timer
+  /// Start the resend countdown timer (120 seconds)
   void _startResendTimer() {
     _showResendButton = false;
-    _resendTimer = 30;
+    _resendTimer = 120; // ✅ Changed from 30 → 120
     Future.doWhile(() async {
       await Future.delayed(const Duration(seconds: 1));
       if (_otpSent) {

@@ -1,53 +1,40 @@
-/// UserModel — Authenticated User State
+/// UserModel — Local user account stored in encrypted Hive box.
 ///
-/// Holds the minimal user data needed in memory after login.
-/// This is NOT stored in Hive — it lives only in AuthViewModel's state
-/// and is cleared on logout.
+/// SECURITY NOTE:
+///   - [passwordHash] stores SHA-256(salt + password) — never plain text
+///   - [passwordSalt] is a unique per-user random salt (16 bytes, hex)
+///     stored alongside the hash so login can re-derive and compare.
+///   - Storing the salt is safe and standard practice (e.g. bcrypt does this).
+///     The salt's job is to prevent rainbow tables, not to be secret.
 class UserModel {
   final String uid;
   final String email;
-  final String? passwordHash;
+  final String passwordHash;
+  final String? passwordSalt; // ← NEW: per-user unique salt
   final bool isEmailVerified;
 
   UserModel({
     required this.uid,
     required this.email,
-    this.passwordHash,
-    this.isEmailVerified = true,
+    required this.passwordHash,
+    this.passwordSalt,
+    required this.isEmailVerified,
   });
 
-  /// Creates a copy with updated fields
-  UserModel copyWith({
-    String? uid,
-    String? email,
-    String? passwordHash,
-    bool? isEmailVerified,
-  }) {
-    return UserModel(
-      uid: uid ?? this.uid,
-      email: email ?? this.email,
-      passwordHash: passwordHash ?? this.passwordHash,
-      isEmailVerified: isEmailVerified ?? this.isEmailVerified,
-    );
-  }
+  Map<String, dynamic> toJson() => {
+        'uid': uid,
+        'email': email,
+        'passwordHash': passwordHash,
+        'passwordSalt': passwordSalt, // persisted with the user record
+        'isEmailVerified': isEmailVerified,
+      };
 
-  /// Convert UserModel to JSON map for local storage
-  Map<String, dynamic> toJson() {
-    return {
-      'uid': uid,
-      'email': email,
-      'passwordHash': passwordHash,
-      'isEmailVerified': isEmailVerified,
-    };
-  }
-
-  /// Create UserModel from JSON map
-  factory UserModel.fromJson(Map<String, dynamic> json) {
-    return UserModel(
-      uid: json['uid'] as String,
-      email: json['email'] as String,
-      passwordHash: json['passwordHash'] as String?,
-      isEmailVerified: json['isEmailVerified'] as bool? ?? true,
-    );
-  }
+  factory UserModel.fromJson(Map<String, dynamic> json) => UserModel(
+        uid: json['uid'] as String,
+        email: json['email'] as String,
+        passwordHash: json['passwordHash'] as String,
+        passwordSalt:
+            json['passwordSalt'] as String?, // nullable for backwards compat
+        isEmailVerified: json['isEmailVerified'] as bool? ?? false,
+      );
 }

@@ -1,8 +1,0 @@
-<?xml version="1.0" encoding="utf-8"?>
-<resources>
-    <string name="firebase_database_url">https://ciphertask-demo.firebaseio.com</string>
-    <string name="google_app_id">1:123456789012:android:abcdef123456</string>
-    <string name="google_api_key">AIzaSyDemoKeyForTestingOnly123456</string>
-    <string name="google_storage_bucket">ciphertask-demo.appspot.com</string>
-    <string name="project_id">ciphertask-demo</string>
-</resources>

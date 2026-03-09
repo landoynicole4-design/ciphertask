@@ -6,17 +6,16 @@ import '../services/encryption_service.dart';
 
 /// TodoViewModel — Task CRUD with Encryption (M1 + M2)
 ///
-/// This ViewModel sits between the UI and the data layer.
-/// It handles all To-Do business logic and ensures that:
-///   - secretNote is ALWAYS encrypted before going into the DB
-///   - secretNote is ALWAYS decrypted before being shown in the UI
-///
-/// Views NEVER call DatabaseService or EncryptionService directly.
-/// This strict separation is the core of MVVM.
+/// [currentUserId] is nullable to support the initial state before login.
+/// Once the user logs in, ProxyProvider in main.dart calls update() which
+/// rebuilds this ViewModel with the real userId, triggering loadTodos().
 class TodoViewModel extends ChangeNotifier {
   final DatabaseService _databaseService;
   final EncryptionService _encryptionService;
   final Uuid _uuid = const Uuid();
+
+  // Nullable: null = not logged in yet, String = logged-in user's email
+  String? _currentUserId;
 
   List<TodoModel> _todos = [];
   bool _isLoading = false;
@@ -26,23 +25,39 @@ class TodoViewModel extends ChangeNotifier {
   List<TodoModel> get todos => List.unmodifiable(_todos);
   bool get isLoading => _isLoading;
   String? get errorMessage => _errorMessage;
+  String? get currentUserId => _currentUserId;
 
   TodoViewModel({
     required DatabaseService databaseService,
     required EncryptionService encryptionService,
+    String? currentUserId, // ← nullable: safe before login
   })  : _databaseService = databaseService,
-        _encryptionService = encryptionService;
+        _encryptionService = encryptionService,
+        _currentUserId = currentUserId {
+    // Auto-load tasks if userId is already known at construction time
+    if (_currentUserId != null) {
+      loadTodos();
+    }
+  }
+
+  /// Called by ProxyProvider on login/logout/account switch.
+  /// Reloads tasks only if the user actually changed.
+  void setCurrentUser(String? userId) {
+    if (_currentUserId == userId) return; // no change, skip reload
+    _currentUserId = userId;
+    _todos = [];
+    notifyListeners();
+    if (userId != null) loadTodos();
+  }
 
   // ─── Load ──────────────────────────────────────────────────────
 
-  /// Loads all To-Do items from the encrypted DB.
-  ///
-  /// Items are returned with ENCRYPTED secretNote values.
-  /// The UI calls decryptNote() separately when it needs to display the note.
+  /// Loads only the tasks that belong to the current user.
   Future<void> loadTodos() async {
+    if (_currentUserId == null) return; // guard: no user = no tasks
     _setLoading(true);
     try {
-      _todos = _databaseService.getAllTodos();
+      _todos = _databaseService.getAllTodos(userId: _currentUserId!);
       notifyListeners();
     } catch (e) {
       _errorMessage = 'Failed to load tasks: ${e.toString()}';
@@ -54,29 +69,23 @@ class TodoViewModel extends ChangeNotifier {
 
   // ─── Create ────────────────────────────────────────────────────
 
-  /// Creates a new To-Do task.
-  ///
-  /// ENCRYPTION STEP: The [secretNote] is encrypted by EncryptionService
-  /// BEFORE being passed to DatabaseService. The DB never sees plain text notes.
-  ///
-  /// Example:
-  ///   Input:  secretNote = "Launch Codes: 9-Alpha-7"
-  ///   Stored: secretNote = "U2FsdGVkX1+abc123..."  (ciphertext)
+  /// Creates a new To-Do task tagged with the current user's ID.
   Future<void> addTodo({
     required String title,
     required String description,
     required String secretNote,
   }) async {
+    if (_currentUserId == null) return; // guard
     _setLoading(true);
     try {
-      // ENCRYPT the sensitive note field before storing
       final encryptedNote = _encryptionService.encrypt(secretNote);
 
       final todo = TodoModel(
-        id: _uuid.v4(), // Generate a unique UUID for this task
+        userId: _currentUserId!,
+        id: _uuid.v4(),
         title: title,
         description: description,
-        secretNote: encryptedNote, // Only ciphertext goes into the DB
+        secretNote: encryptedNote,
         createdAt: DateTime.now(),
       );
 
@@ -93,9 +102,6 @@ class TodoViewModel extends ChangeNotifier {
 
   // ─── Update ────────────────────────────────────────────────────
 
-  /// Updates an existing To-Do task.
-  ///
-  /// If [secretNote] is provided, it gets re-encrypted before saving.
   Future<void> updateTodo({
     required String id,
     String? title,
@@ -103,15 +109,16 @@ class TodoViewModel extends ChangeNotifier {
     String? secretNote,
     bool? isCompleted,
   }) async {
+    if (_currentUserId == null) return; // guard
     _setLoading(true);
     try {
-      final existing = _databaseService.getTodoById(id);
+      final existing =
+          _databaseService.getTodoById(id, userId: _currentUserId!);
       if (existing == null) {
         _errorMessage = 'Task not found.';
         return;
       }
 
-      // Encrypt the new secretNote only if it was changed
       String? encryptedNote;
       if (secretNote != null) {
         encryptedNote = _encryptionService.encrypt(secretNote);
@@ -126,7 +133,6 @@ class TodoViewModel extends ChangeNotifier {
 
       await _databaseService.updateTodo(updated);
 
-      // Refresh local list
       final index = _todos.indexWhere((t) => t.id == id);
       if (index != -1) _todos[index] = updated;
       notifyListeners();
@@ -140,7 +146,6 @@ class TodoViewModel extends ChangeNotifier {
 
   // ─── Delete ────────────────────────────────────────────────────
 
-  /// Permanently deletes a To-Do task by ID.
   Future<void> deleteTodo(String id) async {
     try {
       await _databaseService.deleteTodo(id);
@@ -152,20 +157,34 @@ class TodoViewModel extends ChangeNotifier {
     }
   }
 
+  // ─── Delete All ────────────────────────────────────────────────
+
+  Future<void> deleteAllTodos() async {
+    _setLoading(true);
+    try {
+      final ids = List<String>.from(_todos.map((t) => t.id));
+      for (final id in ids) {
+        await _databaseService.deleteTodo(id);
+      }
+      _todos.clear();
+      notifyListeners();
+    } catch (e) {
+      _errorMessage = 'Failed to delete all tasks: ${e.toString()}';
+      notifyListeners();
+    } finally {
+      _setLoading(false);
+    }
+  }
+
   // ─── Toggle Complete ───────────────────────────────────────────
 
-  /// Toggles the isCompleted status of a task.
   Future<void> toggleComplete(String id) async {
     final todo = _todos.firstWhere((t) => t.id == id);
     await updateTodo(id: id, isCompleted: !todo.isCompleted);
   }
 
-  // ─── Decrypt Note (for Display) ────────────────────────────────
+  // ─── Decrypt Note ──────────────────────────────────────────────
 
-  /// Decrypts a task's secretNote for display in the UI.
-  ///
-  /// This is called ONLY when the user explicitly opens a task's detail view.
-  /// We don't decrypt all notes at once to minimize exposure of sensitive data.
   String decryptNote(String encryptedNote) {
     try {
       return _encryptionService.decrypt(encryptedNote);

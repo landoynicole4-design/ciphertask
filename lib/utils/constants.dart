@@ -31,8 +31,13 @@ class AppConstants {
   static const String todoBoxName = 'secure_todos';
 
   // ─── Routes ─────────────────────────────────────────────────
+  static const String splashRoute = '/';
   static const String loginRoute = '/login';
   static const String registerRoute = '/register';
+
+  /// Dedicated standalone OTP verification screen
+  static const String otpRoute = '/otp';
+
   static const String todoListRoute = '/todos';
 
   // ─── Regex Validation Patterns (Security) ───────────────────

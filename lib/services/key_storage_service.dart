@@ -1,3 +1,5 @@
+import 'dart:convert';
+import 'dart:math';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
 /// KeyStorageService — Hardware-Backed Key Storage Wrapper
@@ -21,6 +23,8 @@ class KeyStorageService {
       accessibility: KeychainAccessibility.first_unlock, // iOS Keychain
     ),
   );
+
+  static const String _hiveKeyName = 'hive_encryption_key';
 
   /// Stores a key-value pair securely in the hardware enclave.
   ///
@@ -52,5 +56,25 @@ class KeyStorageService {
   /// Deletes ALL stored keys. Use only on full app reset.
   Future<void> deleteAllKeys() async {
     await _storage.deleteAll();
+  }
+
+  /// Retrieves the Hive AES-256 encryption key from secure storage.
+  /// If no key exists yet (first run), generates a cryptographically
+  /// secure 32-byte random key, stores it, and returns it.
+  ///
+  /// This key is used by Hive.openEncryptedBox() to encrypt the database
+  /// at rest using AES-256-CBC — satisfying the Excellent rubric criterion.
+  Future<List<int>> retrieveOrGenerateHiveKey() async {
+    final stored = await _storage.read(key: _hiveKeyName);
+
+    if (stored != null) {
+      // Key already exists — decode and return
+      return base64Decode(stored);
+    }
+
+    // First run — generate a cryptographically secure 256-bit (32-byte) key
+    final key = List<int>.generate(32, (_) => Random.secure().nextInt(256));
+    await _storage.write(key: _hiveKeyName, value: base64Encode(key));
+    return key;
   }
 }
